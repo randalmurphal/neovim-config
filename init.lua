@@ -91,7 +91,7 @@ vim.g.mapleader = ' '
 vim.g.maplocalleader = ' '
 
 -- Set to true if you have a Nerd Font installed and selected in the terminal
-vim.g.have_nerd_font = false
+vim.g.have_nerd_font = true
 
 -- [[ Setting options ]]
 -- See `:help vim.o`
@@ -161,6 +161,9 @@ vim.o.cursorline = true
 -- Minimal number of screen lines to keep above and below the cursor.
 vim.o.scrolloff = 10
 
+-- Show 80-character line
+vim.o.colorcolumn = '80'
+
 -- if performing an operation that would fail due to unsaved changes in the buffer (like `:q`),
 -- instead raise a dialog asking if you wish to save the current file(s)
 -- See `:help 'confirm'`
@@ -216,6 +219,17 @@ vim.api.nvim_create_autocmd('TextYankPost', {
   group = vim.api.nvim_create_augroup('kickstart-highlight-yank', { clear = true }),
   callback = function()
     vim.hl.on_yank()
+  end,
+})
+
+-- Remove trailing whitespace on modified lines when saving
+vim.api.nvim_create_autocmd('BufWritePre', {
+  desc = 'Remove trailing whitespace on modified lines',
+  group = vim.api.nvim_create_augroup('trim-whitespace', { clear = true }),
+  callback = function()
+    local save_cursor = vim.fn.getpos('.')
+    vim.cmd([[%s/\s\+$//e]])
+    vim.fn.setpos('.', save_cursor)
   end,
 })
 
@@ -673,7 +687,6 @@ require('lazy').setup({
       local servers = {
         -- clangd = {},
         -- gopls = {},
-        -- pyright = {},
         -- rust_analyzer = {},
         -- ... etc. See `:help lspconfig-all` for a list of all the pre-configured LSPs
         --
@@ -683,6 +696,22 @@ require('lazy').setup({
         -- But for many setups, the LSP (`ts_ls`) will work just fine
         -- ts_ls = {},
         --
+
+        -- Python Language Server
+        pyright = {
+          settings = {
+            python = {
+              analysis = {
+                typeCheckingMode = 'basic',
+                diagnosticMode = 'workspace',
+                inlayHints = {
+                  variableTypes = false,
+                  functionReturnTypes = true,
+                },
+              },
+            },
+          },
+        },
 
         lua_ls = {
           -- cmd = { ... },
@@ -716,6 +745,9 @@ require('lazy').setup({
       local ensure_installed = vim.tbl_keys(servers or {})
       vim.list_extend(ensure_installed, {
         'stylua', -- Used to format Lua code
+        'ruff', -- Python linting (replaces pylint)
+        'black', -- Python formatter
+        'isort', -- Python import sorter
       })
       require('mason-tool-installer').setup { ensure_installed = ensure_installed }
 
@@ -768,11 +800,24 @@ require('lazy').setup({
       end,
       formatters_by_ft = {
         lua = { 'stylua' },
-        -- Conform can also run multiple formatters sequentially
-        -- python = { "isort", "black" },
+        python = { 'isort', 'black' }, -- Use pyright's recommended formatters
         --
         -- You can use 'stop_after_first' to run the first available formatter from the list
         -- javascript = { "prettierd", "prettier", stop_after_first = true },
+      },
+      formatters = {
+        black = {
+          prepend_args = { '--line-length', '79', '--skip-string-normalization' },
+        },
+        ruff = {
+          prepend_args = function()
+            local ruff_config = vim.env.RUFF_CONFIG
+            if ruff_config then
+              return { '--config', ruff_config }
+            end
+            return {}
+          end,
+        },
       },
     },
   },
@@ -876,25 +921,25 @@ require('lazy').setup({
     },
   },
 
-  { -- You can easily change to a different colorscheme.
-    -- Change the name of the colorscheme plugin below, and then
-    -- change the command in the config to whatever the name of that colorscheme is.
-    --
-    -- If you want to see what colorschemes are already installed, you can use `:Telescope colorscheme`.
-    'folke/tokyonight.nvim',
+  { -- Atom One Dark Pro theme - matches Atom One Darker
+    'olimorris/onedarkpro.nvim',
     priority = 1000, -- Make sure to load this before all the other start plugins.
     config = function()
-      ---@diagnostic disable-next-line: missing-fields
-      require('tokyonight').setup {
+      require('onedarkpro').setup {
+        theme = 'onedark_dark', -- onedark_dark is closest to Atom One Darker
         styles = {
-          comments = { italic = false }, -- Disable italics in comments
+          comments = 'italic',
+          keywords = 'bold',
+          functions = 'NONE',
+          variables = 'NONE',
+        },
+        options = {
+          cursorline = true,
+          transparency = false,
+          terminal_colors = true,
         },
       }
-
-      -- Load the colorscheme here.
-      -- Like many other themes, this one has different styles, and you could load
-      -- any other, such as 'tokyonight-storm', 'tokyonight-moon', or 'tokyonight-day'.
-      vim.cmd.colorscheme 'tokyonight-night'
+      vim.cmd.colorscheme 'onedark_dark'
     end,
   },
 
@@ -919,20 +964,9 @@ require('lazy').setup({
       -- - sr)'  - [S]urround [R]eplace [)] [']
       require('mini.surround').setup()
 
-      -- Simple and easy statusline.
-      --  You could remove this setup call if you don't like it,
-      --  and try some other statusline plugin
-      local statusline = require 'mini.statusline'
-      -- set use_icons to true if you have a Nerd Font
-      statusline.setup { use_icons = vim.g.have_nerd_font }
-
-      -- You can configure sections in the statusline by overriding their
-      -- default behavior. For example, here we set the section for
-      -- cursor location to LINE:COLUMN
-      ---@diagnostic disable-next-line: duplicate-set-field
-      statusline.section_location = function()
-        return '%2l:%-2v'
-      end
+      -- Disable mini.statusline since we'll use lualine
+      -- local statusline = require 'mini.statusline'
+      -- statusline.setup { use_icons = vim.g.have_nerd_font }
 
       -- ... and there is more!
       --  Check out: https://github.com/echasnovski/mini.nvim
@@ -944,7 +978,7 @@ require('lazy').setup({
     main = 'nvim-treesitter.configs', -- Sets main module to use for opts
     -- [[ Configure Treesitter ]] See `:help nvim-treesitter`
     opts = {
-      ensure_installed = { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'query', 'vim', 'vimdoc' },
+      ensure_installed = { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'python', 'query', 'vim', 'vimdoc' },
       -- Autoinstall languages that are not installed
       auto_install = true,
       highlight = {
@@ -979,6 +1013,182 @@ require('lazy').setup({
   -- require 'kickstart.plugins.autopairs',
   -- require 'kickstart.plugins.neo-tree',
   -- require 'kickstart.plugins.gitsigns', -- adds gitsigns recommend keymaps
+
+  -- Lualine (statusline)
+  {
+    'nvim-lualine/lualine.nvim',
+    dependencies = { 'nvim-tree/nvim-web-devicons' },
+    config = function()
+      require('lualine').setup {
+        options = {
+          theme = 'onedark',
+          component_separators = '|',
+          section_separators = { left = '', right = '' },
+          globalstatus = true,
+        },
+        sections = {
+          lualine_a = { 'mode' },
+          lualine_b = { 'branch', 'diff', 'diagnostics' },
+          lualine_c = { 'filename' },
+          lualine_x = { 'encoding', 'fileformat', 'filetype' },
+          lualine_y = { 'progress' },
+          lualine_z = { 'location' },
+        },
+      }
+    end,
+  },
+
+  -- Bufferline (tabs)
+  {
+    'akinsho/bufferline.nvim',
+    version = '*',
+    dependencies = 'nvim-tree/nvim-web-devicons',
+    config = function()
+      require('bufferline').setup {
+        options = {
+          numbers = 'none',
+          diagnostics = 'nvim_lsp',
+          separator_style = 'slant',
+          show_buffer_close_icons = false,
+          show_close_icon = false,
+          color_icons = true,
+        },
+      }
+      -- Keymaps for buffer navigation
+      vim.keymap.set('n', '<S-h>', '<cmd>BufferLineCyclePrev<CR>', { desc = 'Previous buffer' })
+      vim.keymap.set('n', '<S-l>', '<cmd>BufferLineCycleNext<CR>', { desc = 'Next buffer' })
+      vim.keymap.set('n', '<leader>x', '<cmd>bd<CR>', { desc = 'Close buffer' })
+    end,
+  },
+
+  -- File explorer (nvim-tree)
+  {
+    'nvim-tree/nvim-tree.lua',
+    dependencies = { 'nvim-tree/nvim-web-devicons' },
+    config = function()
+      require('nvim-tree').setup {
+        view = {
+          width = 30,
+          side = 'left',
+        },
+        renderer = {
+          highlight_git = true,
+          icons = {
+            show = {
+              file = true,
+              folder = true,
+              folder_arrow = true,
+              git = true,
+            },
+          },
+        },
+        filters = {
+          dotfiles = false,
+        },
+        git = {
+          enable = true,
+          ignore = false,
+        },
+      }
+      vim.keymap.set('n', '<leader>e', '<cmd>NvimTreeToggle<CR>', { desc = 'Toggle file explorer' })
+      vim.keymap.set('n', '<leader>ef', '<cmd>NvimTreeFindFile<CR>', { desc = 'Find file in explorer' })
+    end,
+  },
+
+  -- Indent guides
+  {
+    'lukas-reineke/indent-blankline.nvim',
+    main = 'ibl',
+    config = function()
+      require('ibl').setup {
+        indent = {
+          char = '│',
+          tab_char = '│',
+        },
+        scope = {
+          enabled = true,
+          show_start = true,
+          show_end = false,
+        },
+        exclude = {
+          filetypes = {
+            'help',
+            'alpha',
+            'dashboard',
+            'nvim-tree',
+            'Trouble',
+            'lazy',
+            'mason',
+          },
+        },
+      }
+    end,
+  },
+
+  -- Color highlighting
+  {
+    'norcalli/nvim-colorizer.lua',
+    config = function()
+      require('colorizer').setup {
+        'css',
+        'scss',
+        'html',
+        'javascript',
+        'typescript',
+        'python',
+        'lua',
+      }
+    end,
+  },
+
+  -- Auto-save
+  {
+    'pocco81/auto-save.nvim',
+    config = function()
+      require('auto-save').setup {
+        enabled = true,
+        execution_message = {
+          message = function()
+            return ('AutoSave: saved at ' .. vim.fn.strftime('%H:%M:%S'))
+          end,
+          dim = 0.18,
+          cleaning_interval = 1250,
+        },
+        trigger_events = { 'InsertLeave' },
+        condition = function(buf)
+          local fn = vim.fn
+          local utils = require('auto-save.utils.data')
+          if fn.getbufvar(buf, '&modifiable') == 1 and utils.not_in(fn.getbufvar(buf, '&filetype'), {}) then
+            return true
+          end
+          return false
+        end,
+        write_all_buffers = false,
+        debounce_delay = 135,
+      }
+    end,
+  },
+
+  -- Session management
+  {
+    'folke/persistence.nvim',
+    event = 'BufReadPre',
+    config = function()
+      require('persistence').setup {
+        dir = vim.fn.stdpath('state') .. '/sessions/',
+        options = { 'buffers', 'curdir', 'tabpages', 'winsize' },
+      }
+      vim.keymap.set('n', '<leader>qs', function()
+        require('persistence').load()
+      end, { desc = 'Restore session' })
+      vim.keymap.set('n', '<leader>ql', function()
+        require('persistence').load { last = true }
+      end, { desc = 'Restore last session' })
+      vim.keymap.set('n', '<leader>qd', function()
+        require('persistence').stop()
+      end, { desc = 'Stop session recording' })
+    end,
+  },
 
   -- NOTE: The import below can automatically add your own plugins, configuration, etc from `lua/custom/plugins/*.lua`
   --    This is the easiest way to modularize your config.
