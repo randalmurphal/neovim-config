@@ -121,6 +121,12 @@ end)
 -- Enable break indent
 vim.o.breakindent = true
 
+-- Tab and indentation settings
+vim.o.tabstop = 4        -- Number of spaces a tab character represents
+vim.o.shiftwidth = 4     -- Number of spaces for each indentation level
+vim.o.expandtab = true   -- Convert tabs to spaces
+vim.o.softtabstop = 4    -- Number of spaces when pressing tab in insert mode
+
 -- Save undo history
 vim.o.undofile = true
 
@@ -175,6 +181,13 @@ vim.o.confirm = true
 -- Clear highlights on search when pressing <Esc> in normal mode
 --  See `:help hlsearch`
 vim.keymap.set('n', '<Esc>', '<cmd>nohlsearch<CR>')
+
+-- Map jk to escape in insert mode
+vim.keymap.set('i', 'jk', '<Esc>', { desc = 'Exit insert mode with jk' })
+
+-- Line navigation shortcuts
+vim.keymap.set('n', '<leader>hh', '^', { desc = 'Go to beginning of line' })
+vim.keymap.set('n', '<leader>ll', '$', { desc = 'Go to end of line' })
 
 -- Diagnostic keymaps
 vim.keymap.set('n', '<leader>q', vim.diagnostic.setloclist, { desc = 'Open diagnostic [Q]uickfix list' })
