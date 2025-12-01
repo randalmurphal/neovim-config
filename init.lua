@@ -215,6 +215,34 @@ vim.keymap.set('n', '<C-l>', '<C-w><C-l>', { desc = 'Move focus to the right win
 vim.keymap.set('n', '<C-j>', '<C-w><C-j>', { desc = 'Move focus to the lower window' })
 vim.keymap.set('n', '<C-k>', '<C-w><C-k>', { desc = 'Move focus to the upper window' })
 
+-- Mouse back/forward buttons for jump list (like VSCode/browser navigation)
+vim.keymap.set('n', '<X1Mouse>', '<C-o>', { desc = 'Jump back (mouse back button)' })
+vim.keymap.set('n', '<X2Mouse>', '<C-i>', { desc = 'Jump forward (mouse forward button)' })
+
+-- Git blame
+vim.keymap.set('n', '<leader>gb', '<cmd>Gitsigns blame_line<CR>', { desc = '[G]it [B]lame line' })
+
+-- Easier split management (VSCode-like)
+vim.keymap.set('n', '<leader>\\', '<cmd>vsplit<CR>', { desc = 'Split vertical |' })
+vim.keymap.set('n', '<leader>-', '<cmd>split<CR>', { desc = 'Split horizontal -' })
+vim.keymap.set('n', '<leader>wx', '<cmd>close<CR>', { desc = '[W]indow close [X]' })
+vim.keymap.set('n', '<leader>wo', '<cmd>only<CR>', { desc = '[W]indow [O]nly (close others)' })
+vim.keymap.set('n', '<leader>w=', '<C-w>=', { desc = '[W]indow [=]equalize' })
+
+-- Send current file to new tmux pane (opens there, closes here)
+vim.keymap.set('n', '<leader>ts', function()
+  local file = vim.fn.expand('%:p')
+  local cwd = vim.fn.getcwd()  -- Use nvim's working directory (project root)
+  if file == '' then
+    print('No file to send')
+    return
+  end
+  -- Create new tmux split at same project root, open file and tree
+  vim.fn.system('tmux split-window -h -c "' .. cwd .. '" "nvim \'' .. file .. '\' -c NvimTreeOpen"')
+  -- Close buffer here
+  vim.cmd('bd')
+end, { desc = '[T]mux [S]end file to new pane' })
+
 -- NOTE: Some terminals have colliding keymaps or are not able to send distinct keycodes
 -- vim.keymap.set("n", "<C-S-h>", "<C-w>H", { desc = "Move window to the left" })
 -- vim.keymap.set("n", "<C-S-l>", "<C-w>L", { desc = "Move window to the right" })
@@ -653,11 +681,16 @@ require('lazy').setup({
         end,
       })
 
-      -- Diagnostic Config
+      -- Diagnostic Config (VSCode-like: no inline text, show on hover)
       -- See :help vim.diagnostic.Opts
       vim.diagnostic.config {
         severity_sort = true,
-        float = { border = 'rounded', source = 'if_many' },
+        float = {
+          border = 'rounded',
+          source = true,
+          header = '',
+          prefix = '',
+        },
         underline = { severity = vim.diagnostic.severity.ERROR },
         signs = vim.g.have_nerd_font and {
           text = {
@@ -667,20 +700,15 @@ require('lazy').setup({
             [vim.diagnostic.severity.HINT] = '󰌶 ',
           },
         } or {},
-        virtual_text = {
-          source = 'if_many',
-          spacing = 2,
-          format = function(diagnostic)
-            local diagnostic_message = {
-              [vim.diagnostic.severity.ERROR] = diagnostic.message,
-              [vim.diagnostic.severity.WARN] = diagnostic.message,
-              [vim.diagnostic.severity.INFO] = diagnostic.message,
-              [vim.diagnostic.severity.HINT] = diagnostic.message,
-            }
-            return diagnostic_message[diagnostic.severity]
-          end,
-        },
+        virtual_text = false,  -- Disable inline errors
       }
+
+      -- Show diagnostics on hover (like VSCode)
+      vim.api.nvim_create_autocmd('CursorHold', {
+        callback = function()
+          vim.diagnostic.open_float(nil, { focusable = false })
+        end,
+      })
 
       -- LSP servers and clients are able to communicate to each other what features they support.
       --  By default, Neovim doesn't support everything that is in the LSP specification.
@@ -700,7 +728,6 @@ require('lazy').setup({
       local servers = {
         -- clangd = {},
         -- gopls = {},
-        -- rust_analyzer = {},
         -- ... etc. See `:help lspconfig-all` for a list of all the pre-configured LSPs
         --
         -- Some languages (like typescript) have entire language plugins that can be useful:
@@ -708,20 +735,80 @@ require('lazy').setup({
         --
         -- But for many setups, the LSP (`ts_ls`) will work just fine
         -- ts_ls = {},
-        --
 
-        -- Python Language Server
+        -- Rust Language Server
+        rust_analyzer = {
+          settings = {
+            ['rust-analyzer'] = {
+              checkOnSave = {
+                command = 'clippy',
+              },
+              cargo = {
+                allFeatures = true,
+              },
+              procMacro = {
+                enable = true,
+              },
+            },
+          },
+        },
+
+        -- Go Language Server
+        gopls = {
+          settings = {
+            gopls = {
+              analyses = {
+                unusedparams = true,
+              },
+              staticcheck = true,
+              gofumpt = true,
+            },
+          },
+        },
+
+        -- TypeScript/JavaScript Language Server
+        ts_ls = {
+          settings = {
+            typescript = {
+              inlayHints = {
+                includeInlayParameterNameHints = 'all',
+                includeInlayFunctionParameterTypeHints = true,
+                includeInlayVariableTypeHints = false,
+              },
+            },
+            javascript = {
+              inlayHints = {
+                includeInlayParameterNameHints = 'all',
+                includeInlayFunctionParameterTypeHints = true,
+                includeInlayVariableTypeHints = false,
+              },
+            },
+          },
+        },
+
+        -- Python Type Checking
         pyright = {
           settings = {
             python = {
               analysis = {
                 typeCheckingMode = 'basic',
-                diagnosticMode = 'workspace',
+                diagnosticMode = 'openFilesOnly',  -- workspace can be slow on large repos
                 inlayHints = {
                   variableTypes = false,
                   functionReturnTypes = true,
                 },
               },
+            },
+          },
+        },
+
+        -- Python Linting (ruff is way faster than pylint/flake8)
+        ruff = {
+          init_options = {
+            settings = {
+              -- Use ruff.toml or pyproject.toml from project if exists
+              -- Otherwise falls back to defaults
+              args = {},
             },
           },
         },
@@ -757,10 +844,8 @@ require('lazy').setup({
       -- for you, so that they are available from within Neovim.
       local ensure_installed = vim.tbl_keys(servers or {})
       vim.list_extend(ensure_installed, {
-        'stylua', -- Used to format Lua code
-        'ruff', -- Python linting (replaces pylint)
-        'black', -- Python formatter
-        'isort', -- Python import sorter
+        'stylua', -- Lua formatter
+        'ruff',   -- Python linter + formatter (replaces black, isort, flake8, pylint)
       })
       require('mason-tool-installer').setup { ensure_installed = ensure_installed }
 
@@ -797,32 +882,18 @@ require('lazy').setup({
     },
     opts = {
       notify_on_error = false,
-      format_on_save = function(bufnr)
-        -- Disable "format_on_save lsp_fallback" for languages that don't
-        -- have a well standardized coding style. You can add additional
-        -- languages here or re-enable it for the disabled ones.
-        local disable_filetypes = { c = true, cpp = true }
-        if disable_filetypes[vim.bo[bufnr].filetype] then
-          return nil
-        else
-          return {
-            timeout_ms = 500,
-            lsp_format = 'fallback',
-          }
-        end
-      end,
+      format_on_save = false,  -- Disabled - use <leader>f to format manually
       formatters_by_ft = {
         lua = { 'stylua' },
-        python = { 'isort', 'black' }, -- Use pyright's recommended formatters
+        python = { 'ruff_format', 'ruff_fix' },  -- ruff handles formatting + import sorting
         --
         -- You can use 'stop_after_first' to run the first available formatter from the list
         -- javascript = { "prettierd", "prettier", stop_after_first = true },
       },
       formatters = {
-        black = {
-          prepend_args = { '--line-length', '79', '--skip-string-normalization' },
-        },
-        ruff = {
+        -- Ruff will auto-detect ruff.toml or pyproject.toml in project
+        -- Set RUFF_CONFIG env var to override
+        ruff_format = {
           prepend_args = function()
             local ruff_config = vim.env.RUFF_CONFIG
             if ruff_config then
@@ -934,15 +1005,201 @@ require('lazy').setup({
     },
   },
 
-  { -- Atom One Dark Pro theme - matches Atom One Darker
+  { -- Custom Dark Purple theme matching VSCode config
     'olimorris/onedarkpro.nvim',
-    priority = 1000, -- Make sure to load this before all the other start plugins.
+    priority = 1000,
     config = function()
       require('onedarkpro').setup {
-        theme = 'onedark_dark', -- onedark_dark is closest to Atom One Darker
+        colors = {
+          -- Base colors matching VSCode config
+          bg = '#050505',
+          fg = '#e0e0e0',
+          cursorline = '#1a1a2e',
+          selection = '#3d2066',  -- Purple at ~50% opacity on dark bg
+          comment = '#606060',
+          -- Syntax colors
+          purple = '#9d4edd',
+          yellow = '#ffc300',
+          green = '#50fa7b',
+          blue = '#0044ff',
+          red = '#e84057',
+          orange = '#ff8c00',
+          cyan = '#6b9bd1',
+        },
+        highlights = {
+          -- Editor UI
+          Normal = { bg = '#050505', fg = '#e0e0e0' },
+          NormalFloat = { bg = '#121218' },
+          FloatBorder = { fg = '#9d4edd' },
+          CursorLine = { bg = '#1a1a2e' },
+          CursorLineNr = { fg = '#9d4edd' },
+          LineNr = { fg = '#606060' },
+          Visual = { bg = '#3d2066' },
+          Search = { bg = '#3d2066' },
+          IncSearch = { bg = '#9d4edd', fg = '#050505' },
+
+          -- Syntax - matching VSCode exactly
+          Comment = { fg = '#606060', italic = true },
+          Keyword = { fg = '#ffc300', bold = true },
+          Conditional = { fg = '#ffc300', bold = true },
+          Repeat = { fg = '#ffc300', bold = true },
+          Statement = { fg = '#ffc300', bold = true },
+          StorageClass = { fg = '#ffc300', bold = true },
+          Type = { fg = '#007038' },
+          Function = { fg = '#6d28d9' },
+          String = { fg = '#50fa7b' },
+          Number = { fg = '#0044ff' },
+          Boolean = { fg = '#0044ff' },
+          Constant = { fg = '#0044ff' },
+          Operator = { fg = '#ffffff' },
+          Delimiter = { fg = '#e0e0e0' },  -- White for , ; :
+          Identifier = { fg = '#e0e0e0' },
+          Special = { fg = '#9d4edd' },
+
+          -- Treesitter specific
+          ['@keyword'] = { fg = '#ffc300', bold = true },
+          ['@keyword.return'] = { fg = '#ffc300', bold = true },
+          ['@keyword.function'] = { fg = '#ffc300', bold = true },
+          ['@keyword.operator'] = { fg = '#ffc300', bold = true },
+          ['@conditional'] = { fg = '#ffc300', bold = true },
+          ['@repeat'] = { fg = '#ffc300', bold = true },
+          ['@function'] = { fg = '#6d28d9' },
+          ['@function.call'] = { fg = '#6d28d9' },
+          ['@function.builtin'] = { fg = '#6d28d9' },
+          ['@method'] = { fg = '#6d28d9' },
+          ['@method.call'] = { fg = '#6d28d9' },
+          ['@type'] = { fg = '#007038' },
+          ['@type.builtin'] = { fg = '#007038' },
+          ['@class'] = { fg = '#007038' },
+          ['@constructor'] = { fg = '#007038' },
+          ['@variable'] = { fg = '#e0e0e0' },
+          ['@variable.member'] = { fg = '#e84057' },  -- obj.property access
+          ['@variable.builtin'] = { fg = '#e0e0e0' },  -- self, cls
+          ['@variable.parameter'] = { fg = '#e0e0e0' },
+          ['@parameter'] = { fg = '#e0e0e0' },
+          ['@property'] = { fg = '#e84057' },  -- Only for property ACCESS (obj.prop)
+          ['@field'] = { fg = '#e0e0e0' },     -- Field definitions should be white
+          ['@lsp.type.variable'] = { fg = '#e0e0e0' },
+          ['@lsp.type.parameter'] = { fg = '#e0e0e0' },
+          ['@lsp.type.namespace'] = { fg = '#e0e0e0' },  -- Module/namespace names white
+          ['@module'] = { fg = '#e0e0e0' },              -- Module names white
+          ['@namespace'] = { fg = '#e0e0e0' },           -- Namespace names white
+          ['@attribute'] = { fg = '#ff8c00' },
+          ['@decorator'] = { fg = '#ff8c00' },
+          ['@string'] = { fg = '#50fa7b' },
+          ['@string.escape'] = { fg = '#9d4edd' },
+          ['@number'] = { fg = '#0044ff' },
+          ['@boolean'] = { fg = '#0044ff' },
+          ['@constant'] = { fg = '#0044ff' },
+          ['@constant.builtin'] = { fg = '#0044ff' },
+          ['@operator'] = { fg = '#ffffff' },
+          ['@punctuation.bracket'] = { fg = '#ffc300' },  -- () [] {} - gold
+          ['@punctuation.delimiter'] = { fg = '#e0e0e0' },  -- , ; : - white
+          ['@punctuation.special'] = { fg = '#ffc300' },   -- String interpolation brackets - gold
+          ['@comment'] = { fg = '#606060', italic = true },
+
+          -- Matching parens and brackets - all gold
+          MatchParen = { fg = '#ffc300', bg = '#3d2066', bold = true },
+
+          -- Rainbow bracket overrides (force all to gold)
+          RainbowDelimiterRed = { fg = '#ffc300' },
+          RainbowDelimiterYellow = { fg = '#ffc300' },
+          RainbowDelimiterBlue = { fg = '#ffc300' },
+          RainbowDelimiterOrange = { fg = '#ffc300' },
+          RainbowDelimiterGreen = { fg = '#ffc300' },
+          RainbowDelimiterViolet = { fg = '#ffc300' },
+          RainbowDelimiterCyan = { fg = '#ffc300' },
+
+          -- Brackets gold, delimiters white
+          ['@lsp.type.punctuation'] = { fg = '#ffc300' },
+          ['@punctuation'] = { fg = '#ffc300' },
+          -- Rust
+          ['@punctuation.bracket.rust'] = { fg = '#ffc300' },
+          ['@punctuation.delimiter.rust'] = { fg = '#e0e0e0' },
+          ['@odp.punctuation_arguments_brackets.rust'] = { fg = '#ffc300' },
+          -- Python
+          ['@punctuation.bracket.python'] = { fg = '#ffc300' },
+          ['@punctuation.delimiter.python'] = { fg = '#e0e0e0' },
+          ['@odp.base_constructor.python'] = { fg = '#6d28d9' },  -- __init__ etc
+          ['@constructor.python'] = { fg = '#6d28d9' },  -- __init__ etc
+          ['@keyword.python'] = { fg = '#ffc300', bold = true },
+          ['@keyword.function.python'] = { fg = '#ffc300', bold = true },
+          ['@keyword.return.python'] = { fg = '#ffc300', bold = true },
+          ['@keyword.operator.python'] = { fg = '#ffc300', bold = true },
+          ['@conditional.python'] = { fg = '#ffc300', bold = true },
+          ['@repeat.python'] = { fg = '#ffc300', bold = true },
+          ['@function.python'] = { fg = '#6d28d9' },
+          ['@function.call.python'] = { fg = '#6d28d9' },
+          ['@function.builtin.python'] = { fg = '#6d28d9' },
+          ['@method.python'] = { fg = '#6d28d9' },
+          ['@method.call.python'] = { fg = '#6d28d9' },
+          ['@type.python'] = { fg = '#007038' },
+          ['@type.builtin.python'] = { fg = '#007038' },
+          ['@class.python'] = { fg = '#007038' },
+          ['@constructor.python'] = { fg = '#007038' },
+          ['@variable.python'] = { fg = '#e0e0e0' },
+          ['@variable.builtin.python'] = { fg = '#e0e0e0' },  -- self, cls
+          ['@variable.parameter.python'] = { fg = '#e0e0e0' },
+          ['@parameter.python'] = { fg = '#e0e0e0' },
+          ['@property.python'] = { fg = '#e84057' },
+          ['@field.python'] = { fg = '#e0e0e0' },
+          ['@attribute.python'] = { fg = '#ff8c00' },  -- decorators
+          ['@decorator.python'] = { fg = '#ff8c00' },
+          ['@string.python'] = { fg = '#50fa7b' },
+          ['@number.python'] = { fg = '#0044ff' },
+          ['@boolean.python'] = { fg = '#0044ff' },
+          ['@constant.python'] = { fg = '#0044ff' },
+          ['@constant.builtin.python'] = { fg = '#0044ff' },
+          ['@operator.python'] = { fg = '#ffffff' },
+          ['@module.python'] = { fg = '#e0e0e0' },
+          ['@namespace.python'] = { fg = '#e0e0e0' },
+          -- Go
+          ['@punctuation.bracket.go'] = { fg = '#ffc300' },
+          ['@punctuation.delimiter.go'] = { fg = '#e0e0e0' },
+          -- Lua
+          ['@punctuation.bracket.lua'] = { fg = '#ffc300' },
+          ['@punctuation.delimiter.lua'] = { fg = '#e0e0e0' },
+          -- JavaScript
+          ['@punctuation.bracket.javascript'] = { fg = '#ffc300' },
+          ['@punctuation.delimiter.javascript'] = { fg = '#e0e0e0' },
+          -- TypeScript
+          ['@punctuation.bracket.typescript'] = { fg = '#ffc300' },
+          ['@punctuation.delimiter.typescript'] = { fg = '#e0e0e0' },
+
+          -- Git signs
+          GitSignsAdd = { fg = '#50fa7b' },
+          GitSignsChange = { fg = '#0044ff' },
+          GitSignsDelete = { fg = '#e84057' },
+
+          -- Diagnostics
+          DiagnosticError = { fg = '#e84057' },
+          DiagnosticWarn = { fg = '#ffc300' },
+          DiagnosticInfo = { fg = '#6b9bd1' },
+          DiagnosticHint = { fg = '#9d4edd' },
+
+          -- NvimTree
+          NvimTreeNormal = { bg = '#050505' },
+          NvimTreeFolderIcon = { fg = '#9d4edd' },
+          NvimTreeFolderName = { fg = '#e0e0e0' },
+          NvimTreeOpenedFolderName = { fg = '#9d4edd' },
+          NvimTreeRootFolder = { fg = '#9d4edd', bold = true },
+          NvimTreeGitDirty = { fg = '#ffc300' },      -- Modified
+          NvimTreeGitStaged = { fg = '#50fa7b' },     -- Staged
+          NvimTreeGitNew = { fg = '#50fa7b' },        -- Untracked
+          NvimTreeGitDeleted = { fg = '#e84057' },    -- Deleted
+          NvimTreeGitRenamed = { fg = '#6b9bd1' },    -- Renamed
+          NvimTreeGitMerge = { fg = '#e84057' },      -- Conflict
+          NvimTreeGitIgnored = { fg = '#606060' },    -- Ignored
+
+          -- Bufferline
+          BufferLineFill = { bg = '#050505' },
+          BufferLineBackground = { bg = '#050505', fg = '#606060' },
+          BufferLineBufferSelected = { bg = '#1a1a2e', fg = '#e0e0e0', bold = true },
+          BufferLineIndicatorSelected = { fg = '#9d4edd' },
+        },
         styles = {
           comments = 'italic',
-          keywords = 'bold',
+          keywords = 'NONE',
           functions = 'NONE',
           variables = 'NONE',
         },
@@ -953,6 +1210,82 @@ require('lazy').setup({
         },
       }
       vim.cmd.colorscheme 'onedark_dark'
+
+      -- Force syntax highlights for ALL languages after colorscheme loads
+      vim.api.nvim_create_autocmd('ColorScheme', {
+        callback = function()
+          -- These apply to all languages
+          local highlights = {
+            -- Keywords - gold bold
+            ['@keyword'] = { fg = '#ffc300', bold = true },
+            ['@keyword.return'] = { fg = '#ffc300', bold = true },
+            ['@keyword.function'] = { fg = '#ffc300', bold = true },
+            ['@keyword.operator'] = { fg = '#ffc300', bold = true },
+            ['@keyword.conditional'] = { fg = '#ffc300', bold = true },
+            ['@keyword.repeat'] = { fg = '#ffc300', bold = true },
+            ['@keyword.import'] = { fg = '#ffc300', bold = true },
+            ['@keyword.exception'] = { fg = '#ffc300', bold = true },
+            ['@conditional'] = { fg = '#ffc300', bold = true },
+            ['@repeat'] = { fg = '#ffc300', bold = true },
+            ['@exception'] = { fg = '#ffc300', bold = true },
+            ['@include'] = { fg = '#ffc300', bold = true },
+            -- Functions - lavender
+            ['@function'] = { fg = '#6d28d9' },
+            ['@function.call'] = { fg = '#6d28d9' },
+            ['@function.builtin'] = { fg = '#6d28d9' },
+            ['@function.method'] = { fg = '#6d28d9' },
+            ['@function.method.call'] = { fg = '#6d28d9' },
+            ['@method'] = { fg = '#6d28d9' },
+            ['@method.call'] = { fg = '#6d28d9' },
+            -- Types - dark green
+            ['@type'] = { fg = '#007038' },
+            ['@type.builtin'] = { fg = '#007038' },
+            ['@type.definition'] = { fg = '#007038' },
+            ['@class'] = { fg = '#007038' },
+            ['@constructor'] = { fg = '#6d28d9' },  -- __init__ etc should be function color
+            -- Variables - white
+            ['@variable'] = { fg = '#e0e0e0' },
+            ['@variable.parameter'] = { fg = '#e0e0e0' },
+            ['@variable.member'] = { fg = '#e84057' },
+            ['@variable.builtin'] = { fg = '#e0e0e0' },  -- self, cls
+            ['@parameter'] = { fg = '#e0e0e0' },
+            ['@field'] = { fg = '#e0e0e0' },
+            ['@property'] = { fg = '#e84057' },
+            -- Modules/namespaces - white
+            ['@module'] = { fg = '#e0e0e0' },
+            ['@namespace'] = { fg = '#e0e0e0' },
+            -- Strings - green
+            ['@string'] = { fg = '#50fa7b' },
+            ['@string.escape'] = { fg = '#9d4edd' },
+            ['@string.special'] = { fg = '#9d4edd' },
+            ['@character'] = { fg = '#50fa7b' },
+            -- Numbers/constants - blue
+            ['@number'] = { fg = '#0044ff' },
+            ['@number.float'] = { fg = '#0044ff' },
+            ['@boolean'] = { fg = '#0044ff' },
+            ['@constant'] = { fg = '#0044ff' },
+            ['@constant.builtin'] = { fg = '#0044ff' },
+            -- Decorators - orange
+            ['@attribute'] = { fg = '#ff8c00' },
+            ['@decorator'] = { fg = '#ff8c00' },
+            -- Operators - white
+            ['@operator'] = { fg = '#ffffff' },
+            -- Punctuation - brackets gold, delimiters white
+            ['@punctuation.bracket'] = { fg = '#ffc300' },
+            ['@punctuation.delimiter'] = { fg = '#e0e0e0' },
+            ['@punctuation.special'] = { fg = '#ffc300' },
+            -- Comments
+            ['@comment'] = { fg = '#606060', italic = true },
+          }
+
+          for group, opts in pairs(highlights) do
+            vim.api.nvim_set_hl(0, group, opts)
+          end
+        end,
+      })
+
+      -- Trigger it now too
+      vim.api.nvim_exec_autocmds('ColorScheme', {})
     end,
   },
 
@@ -991,7 +1324,7 @@ require('lazy').setup({
     main = 'nvim-treesitter.configs', -- Sets main module to use for opts
     -- [[ Configure Treesitter ]] See `:help nvim-treesitter`
     opts = {
-      ensure_installed = { 'bash', 'c', 'diff', 'html', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'python', 'query', 'vim', 'vimdoc' },
+      ensure_installed = { 'bash', 'c', 'diff', 'go', 'html', 'javascript', 'json', 'lua', 'luadoc', 'markdown', 'markdown_inline', 'python', 'query', 'rust', 'toml', 'typescript', 'tsx', 'vim', 'vimdoc', 'yaml' },
       -- Autoinstall languages that are not installed
       auto_install = true,
       highlight = {
@@ -1032,9 +1365,43 @@ require('lazy').setup({
     'nvim-lualine/lualine.nvim',
     dependencies = { 'nvim-tree/nvim-web-devicons' },
     config = function()
+      -- Custom purple theme matching VSCode/tmux/Ghostty
+      local purple_theme = {
+        normal = {
+          a = { bg = '#9d4edd', fg = '#050505', gui = 'bold' },
+          b = { bg = '#1a1a2e', fg = '#e0e0e0' },
+          c = { bg = '#121218', fg = '#a0a0a0' },
+        },
+        insert = {
+          a = { bg = '#50fa7b', fg = '#050505', gui = 'bold' },
+          b = { bg = '#1a1a2e', fg = '#e0e0e0' },
+          c = { bg = '#121218', fg = '#a0a0a0' },
+        },
+        visual = {
+          a = { bg = '#ffc300', fg = '#050505', gui = 'bold' },
+          b = { bg = '#1a1a2e', fg = '#e0e0e0' },
+          c = { bg = '#121218', fg = '#a0a0a0' },
+        },
+        replace = {
+          a = { bg = '#e84057', fg = '#050505', gui = 'bold' },
+          b = { bg = '#1a1a2e', fg = '#e0e0e0' },
+          c = { bg = '#121218', fg = '#a0a0a0' },
+        },
+        command = {
+          a = { bg = '#9d4edd', fg = '#050505', gui = 'bold' },
+          b = { bg = '#1a1a2e', fg = '#e0e0e0' },
+          c = { bg = '#121218', fg = '#a0a0a0' },
+        },
+        inactive = {
+          a = { bg = '#121218', fg = '#606060' },
+          b = { bg = '#121218', fg = '#606060' },
+          c = { bg = '#121218', fg = '#606060' },
+        },
+      }
+
       require('lualine').setup {
         options = {
-          theme = 'onedark',
+          theme = purple_theme,
           component_separators = '|',
           section_separators = { left = '', right = '' },
           globalstatus = true,
@@ -1059,18 +1426,42 @@ require('lazy').setup({
     config = function()
       require('bufferline').setup {
         options = {
+          mode = 'buffers',
           numbers = 'none',
           diagnostics = 'nvim_lsp',
           separator_style = 'slant',
-          show_buffer_close_icons = false,
+          show_buffer_close_icons = true,  -- Show X on tabs like VSCode
           show_close_icon = false,
           color_icons = true,
+          -- Make clicking tabs work
+          left_mouse_command = 'buffer %d',  -- Click to switch
+          middle_mouse_command = 'bdelete! %d',  -- Middle click to close
+          right_mouse_command = 'vertical sbuffer %d',  -- Right click opens in split
+          -- Keep tabs visible even with one buffer
+          always_show_bufferline = true,
+          -- Show tab index numbers so you can jump with <leader>1, <leader>2, etc
+          numbers = function(opts)
+            return string.format('%s', opts.ordinal)
+          end,
         },
       }
       -- Keymaps for buffer navigation
       vim.keymap.set('n', '<S-h>', '<cmd>BufferLineCyclePrev<CR>', { desc = 'Previous buffer' })
       vim.keymap.set('n', '<S-l>', '<cmd>BufferLineCycleNext<CR>', { desc = 'Next buffer' })
       vim.keymap.set('n', '<leader>x', '<cmd>bd<CR>', { desc = 'Close buffer' })
+      -- Jump to buffer by number (like VSCode Ctrl+1, Ctrl+2, etc)
+      vim.keymap.set('n', '<leader>1', '<cmd>BufferLineGoToBuffer 1<CR>', { desc = 'Go to buffer 1' })
+      vim.keymap.set('n', '<leader>2', '<cmd>BufferLineGoToBuffer 2<CR>', { desc = 'Go to buffer 2' })
+      vim.keymap.set('n', '<leader>3', '<cmd>BufferLineGoToBuffer 3<CR>', { desc = 'Go to buffer 3' })
+      vim.keymap.set('n', '<leader>4', '<cmd>BufferLineGoToBuffer 4<CR>', { desc = 'Go to buffer 4' })
+      vim.keymap.set('n', '<leader>5', '<cmd>BufferLineGoToBuffer 5<CR>', { desc = 'Go to buffer 5' })
+      vim.keymap.set('n', '<leader>6', '<cmd>BufferLineGoToBuffer 6<CR>', { desc = 'Go to buffer 6' })
+      vim.keymap.set('n', '<leader>7', '<cmd>BufferLineGoToBuffer 7<CR>', { desc = 'Go to buffer 7' })
+      vim.keymap.set('n', '<leader>8', '<cmd>BufferLineGoToBuffer 8<CR>', { desc = 'Go to buffer 8' })
+      vim.keymap.set('n', '<leader>9', '<cmd>BufferLineGoToBuffer 9<CR>', { desc = 'Go to buffer 9' })
+      -- Reorder tabs (since drag doesn't work)
+      vim.keymap.set('n', '<A-h>', '<cmd>BufferLineMovePrev<CR>', { desc = 'Move tab left' })
+      vim.keymap.set('n', '<A-l>', '<cmd>BufferLineMoveNext<CR>', { desc = 'Move tab right' })
     end,
   },
 
@@ -1083,15 +1474,31 @@ require('lazy').setup({
         view = {
           width = 30,
           side = 'left',
+          preserve_window_proportions = true,
         },
         renderer = {
           highlight_git = true,
+          highlight_opened_files = 'name',  -- Highlight open files in tree
+          indent_markers = {
+            enable = true,  -- Show indent guides like VSCode
+          },
           icons = {
             show = {
               file = true,
               folder = true,
               folder_arrow = true,
               git = true,
+            },
+            glyphs = {
+              git = {
+                unstaged = '●',
+                staged = '✓',
+                unmerged = '',
+                renamed = '➜',
+                untracked = '★',
+                deleted = '',
+                ignored = '◌',
+              },
             },
           },
         },
@@ -1101,6 +1508,19 @@ require('lazy').setup({
         git = {
           enable = true,
           ignore = false,
+        },
+        actions = {
+          open_file = {
+            quit_on_open = false,  -- Keep tree open when opening file (like VSCode)
+            window_picker = {
+              enable = false,  -- Open in previous window, don't ask which split
+            },
+          },
+        },
+        -- Sync tree with current file automatically
+        update_focused_file = {
+          enable = true,
+          update_root = false,
         },
       }
       vim.keymap.set('n', '<leader>e', '<cmd>NvimTreeToggle<CR>', { desc = 'Toggle file explorer' })
