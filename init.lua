@@ -1470,7 +1470,23 @@ require('lazy').setup({
     'nvim-tree/nvim-tree.lua',
     dependencies = { 'nvim-tree/nvim-web-devicons' },
     config = function()
+      local function on_attach(bufnr)
+        local api = require('nvim-tree.api')
+
+        -- Default NvimTree mappings
+        api.config.mappings.default_on_attach(bufnr)
+
+        -- Telescope overrides (work even when focused on tree)
+        local builtin = require('telescope.builtin')
+        local opts = { buffer = bufnr, noremap = true, silent = true }
+        vim.keymap.set('n', '<leader>sf', builtin.find_files, opts)
+        vim.keymap.set('n', '<leader>sg', builtin.live_grep, opts)
+        vim.keymap.set('n', '<leader>s.', builtin.oldfiles, opts)
+        vim.keymap.set('n', '<leader><leader>', builtin.buffers, opts)
+      end
+
       require('nvim-tree').setup {
+        on_attach = on_attach,
         view = {
           width = 30,
           side = 'left',
