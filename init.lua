@@ -219,6 +219,10 @@ vim.keymap.set('n', '<C-k>', '<C-w><C-k>', { desc = 'Move focus to the upper win
 vim.keymap.set('n', '<X1Mouse>', '<C-o>', { desc = 'Jump back (mouse back button)' })
 vim.keymap.set('n', '<X2Mouse>', '<C-i>', { desc = 'Jump forward (mouse forward button)' })
 
+-- Scroll wheel moves viewport, cursor stays in place (like VSCode)
+vim.keymap.set('n', '<ScrollWheelUp>', '3<C-y>', { desc = 'Scroll up (cursor stays)' })
+vim.keymap.set('n', '<ScrollWheelDown>', '3<C-e>', { desc = 'Scroll down (cursor stays)' })
+
 -- Git blame
 vim.keymap.set('n', '<leader>gb', '<cmd>Gitsigns blame_line<CR>', { desc = '[G]it [B]lame line' })
 
@@ -402,6 +406,8 @@ require('lazy').setup({
         { '<leader>s', group = '[S]earch' },
         { '<leader>t', group = '[T]oggle' },
         { '<leader>h', group = 'Git [H]unk', mode = { 'n', 'v' } },
+        { '<leader>c', group = '[C]laude Code', mode = { 'n', 'v' } },
+        { '<leader>x', group = 'Trouble/Diagnostics' },
       },
     },
   },
@@ -1590,33 +1596,33 @@ require('lazy').setup({
     end,
   },
 
-  -- Auto-save
-  {
-    'pocco81/auto-save.nvim',
-    config = function()
-      require('auto-save').setup {
-        enabled = true,
-        execution_message = {
-          message = function()
-            return ('AutoSave: saved at ' .. vim.fn.strftime('%H:%M:%S'))
-          end,
-          dim = 0.18,
-          cleaning_interval = 1250,
-        },
-        trigger_events = { 'InsertLeave' },
-        condition = function(buf)
-          local fn = vim.fn
-          local utils = require('auto-save.utils.data')
-          if fn.getbufvar(buf, '&modifiable') == 1 and utils.not_in(fn.getbufvar(buf, '&filetype'), {}) then
-            return true
-          end
-          return false
-        end,
-        write_all_buffers = false,
-        debounce_delay = 135,
-      }
-    end,
-  },
+  -- Auto-save (DISABLED - was interfering with Claude Code diff view)
+  -- {
+  --   'pocco81/auto-save.nvim',
+  --   config = function()
+  --     require('auto-save').setup {
+  --       enabled = true,
+  --       execution_message = {
+  --         message = function()
+  --           return ('AutoSave: saved at ' .. vim.fn.strftime('%H:%M:%S'))
+  --         end,
+  --         dim = 0.18,
+  --         cleaning_interval = 1250,
+  --       },
+  --       trigger_events = { 'InsertLeave' },
+  --       condition = function(buf)
+  --         local fn = vim.fn
+  --         local utils = require('auto-save.utils.data')
+  --         if fn.getbufvar(buf, '&modifiable') == 1 and utils.not_in(fn.getbufvar(buf, '&filetype'), {}) then
+  --           return true
+  --         end
+  --         return false
+  --       end,
+  --       write_all_buffers = false,
+  --       debounce_delay = 135,
+  --     }
+  --   end,
+  -- },
 
   -- Session management
   {
@@ -1636,6 +1642,110 @@ require('lazy').setup({
       vim.keymap.set('n', '<leader>qd', function()
         require('persistence').stop()
       end, { desc = 'Stop session recording' })
+    end,
+  },
+
+  -- Auto-pairs (auto-close brackets, quotes, etc.)
+  {
+    'windwp/nvim-autopairs',
+    event = 'InsertEnter',
+    opts = {
+      check_ts = true, -- Use treesitter to check for pairs
+    },
+  },
+
+  -- Multi-cursor support (VSCode-style Ctrl+click, Ctrl+d)
+  {
+    'brenton-leighton/multiple-cursors.nvim',
+    version = '*',
+    opts = {},
+    keys = {
+      { '<C-LeftMouse>', '<Cmd>MultipleCursorsMouseAddDelete<CR>', mode = { 'n', 'i' }, desc = 'Add/remove cursor' },
+      { '<C-Down>', '<Cmd>MultipleCursorsAddDown<CR>', mode = { 'n', 'i' }, desc = 'Add cursor down' },
+      { '<C-Up>', '<Cmd>MultipleCursorsAddUp<CR>', mode = { 'n', 'i' }, desc = 'Add cursor up' },
+      { '<C-d>', '<Cmd>MultipleCursorsAddJumpNextMatch<CR>', mode = { 'n', 'x' }, desc = 'Add cursor to next match' },
+    },
+  },
+
+  -- Undotree (visual undo history)
+  {
+    'mbbill/undotree',
+    keys = {
+      { '<leader>u', '<Cmd>UndotreeToggle<CR>', desc = '[U]ndotree toggle' },
+    },
+  },
+
+  -- Trouble (better diagnostics panel)
+  {
+    'folke/trouble.nvim',
+    dependencies = { 'nvim-tree/nvim-web-devicons' },
+    opts = {},
+    keys = {
+      { '<leader>xx', '<Cmd>Trouble diagnostics toggle<CR>', desc = 'Diagnostics (Trouble)' },
+      { '<leader>xX', '<Cmd>Trouble diagnostics toggle filter.buf=0<CR>', desc = 'Buffer Diagnostics (Trouble)' },
+      { '<leader>xs', '<Cmd>Trouble symbols toggle focus=false<CR>', desc = 'Symbols (Trouble)' },
+      { '<leader>xq', '<Cmd>Trouble qflist toggle<CR>', desc = 'Quickfix (Trouble)' },
+    },
+  },
+
+  -- Flash (jump anywhere in 3 keystrokes)
+  {
+    'folke/flash.nvim',
+    event = 'VeryLazy',
+    opts = {},
+    keys = {
+      { 's', mode = { 'n', 'x', 'o' }, function() require('flash').jump() end, desc = 'Flash jump' },
+      { 'S', mode = { 'n', 'x', 'o' }, function() require('flash').treesitter() end, desc = 'Flash treesitter' },
+      { 'r', mode = 'o', function() require('flash').remote() end, desc = 'Flash remote' },
+      { 'R', mode = { 'o', 'x' }, function() require('flash').treesitter_search() end, desc = 'Flash treesitter search' },
+    },
+  },
+
+  -- Snacks.nvim utilities (used by claudecode + standalone features)
+  {
+    'folke/snacks.nvim',
+    priority = 1000,
+    lazy = false,
+    opts = {
+      -- Disable LSP/treesitter for large files (>1.5MB) to prevent freezing
+      bigfile = { enabled = true },
+      -- Render file content before plugins load for faster startup
+      quickfile = { enabled = true },
+      -- Auto-highlight LSP references under cursor + jump between them
+      words = {
+        enabled = true,
+        debounce = 200,
+      },
+    },
+    keys = {
+      -- Jump between LSP references with [[ and ]]
+      { ']]', function() require('snacks').words.jump(1, true) end, desc = 'Next reference' },
+      { '[[', function() require('snacks').words.jump(-1, true) end, desc = 'Prev reference' },
+    },
+  },
+
+  -- Claude Code integration (AI coding assistant)
+  {
+    'coder/claudecode.nvim',
+    dependencies = {
+      'folke/snacks.nvim',
+    },
+    config = function()
+      require('claudecode').setup({
+        -- Terminal settings
+        terminal = {
+          split_side = 'right',
+          split_width_percentage = 0.4,
+        },
+        -- Explicitly use the correct claude binary
+        terminal_cmd = vim.fn.expand('~/.claude/local/claude'),
+      })
+
+      -- Keymaps for Claude Code
+      vim.keymap.set('n', '<leader>cc', '<cmd>ClaudeCode<CR>', { desc = '[C]laude [C]ode toggle' })
+      vim.keymap.set('n', '<leader>cf', '<cmd>ClaudeCodeFocus<CR>', { desc = '[C]laude [F]ocus' })
+      vim.keymap.set('v', '<leader>cs', '<cmd>ClaudeCodeSend<CR>', { desc = '[C]laude [S]end selection' })
+      vim.keymap.set('n', '<leader>ca', '<cmd>ClaudeCodeTreeAdd<CR>', { desc = '[C]laude [A]dd file from tree' })
     end,
   },
 
